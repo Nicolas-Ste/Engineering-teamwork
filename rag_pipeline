@@ -1,0 +1,154 @@
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from pypdf import PdfReader
+from PIL import Image
+import pytesseract
+import os
+import ollama
+
+# -------------------------
+# LOAD EMBEDDING MODEL
+# -------------------------
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# -------------------------
+# LOAD TEXT FILE
+# ------------------------- 
+def load_txt(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+# -------------------------
+# LOAD PDF FILE
+# -------------------------
+def load_pdf(path):
+    reader = PdfReader(path)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text()
+    return text
+
+# -------------------------
+# LOAD IMAGE (OCR)
+# -------------------------
+def load_image(path):
+    img = Image.open(path)
+    return pytesseract.image_to_string(img)
+
+# -------------------------
+# LOAD ALL DATA FORMATS
+# -------------------------
+def load_all_data(folder="data"):
+    all_text = ""
+    for file in os.listdir(folder):
+        path = os.path.join(folder, file)
+
+        if file.endswith(".txt"):
+            all_text += load_txt(path)
+        elif file.endswith(".pdf"):
+            all_text += load_pdf(path)
+        elif file.endswith(".png") or file.endswith(".jpg"):
+            all_text += load_image(path)
+
+    return all_text
+
+# -------------------------
+# SPLIT INTO CHUNKS
+# -------------------------
+def split_into_chunks(text, max_chars=500, overlap=100):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + max_chars
+        chunk = text[start:end]
+        chunks.append(chunk.strip())
+        start = end - overlap
+    return [c for c in chunks if c]
+
+# -------------------------
+# EMBEDDINGS
+# -------------------------
+def embed_texts(texts):
+    return model.encode(texts, convert_to_numpy=True)
+
+# -------------------------
+# VECTOR DATABASE
+# -------------------------
+class VectorDB:
+    def __init__(self, texts, embeddings):
+        self.texts = texts
+        self.embeddings = embeddings
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        self.normed_embeddings = embeddings / norms
+
+    def search(self, query, k=3):
+        q_emb = embed_texts([query])[0]
+        q_emb = q_emb / np.linalg.norm(q_emb)
+
+        sims = np.dot(self.normed_embeddings, q_emb)
+        topk_idx = np.argsort(-sims)[:k]
+
+        return [self.texts[i] for i in topk_idx]
+
+# -------------------------
+# PROMPT TEMPLATE (RAG)
+# -------------------------
+def build_prompt(context, user_question):
+    return f"""
+You are an assistant. Answer ONLY using the context below.
+
+Context:
+{context}
+
+Question:
+{user_question}
+
+Answer:
+"""
+
+# -------------------------
+# LLM CALL
+# -------------------------
+def ask_llm(prompt):
+    response = ollama.chat(
+        model="llama3",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response["message"]["content"]
+
+# -------------------------
+# MAIN RAG PIPELINE
+# -------------------------
+def main():
+    print("Loading multi-format dataset...")
+    raw_text = load_all_data("data")
+
+    chunks = split_into_chunks(raw_text)
+    embeddings = embed_texts(chunks)
+    vdb = VectorDB(chunks, embeddings)
+
+    print("RAG system ready.\n")
+
+    while True:
+        query = input("Ask a question (or exit): ")
+        if query.lower() == "exit":
+            break
+
+        # ✅ WITHOUT RETRIEVAL (FAIL CASE)
+        print("\n--- LLM Without Retrieval ---")
+        plain_answer = ask_llm(query)
+        print(plain_answer)
+
+        # ✅ WITH RAG
+        retrieved = vdb.search(query, k=3)
+        context = "\n".join(retrieved)
+
+        rag_prompt = build_prompt(context, query)
+
+        print("\n--- LLM With RAG ---")
+        rag_answer = ask_llm(rag_prompt)
+        print(rag_answer)
+
+# -------------------------
+if __name__ == "__main__":
+    main()
