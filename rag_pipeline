@@ -5,6 +5,8 @@ from PIL import Image
 import pytesseract
 import os
 import ollama
+from faster_whisper import WhisperModel
+import cv2
 
 # -------------------------
 # LOAD EMBEDDING MODEL
@@ -36,6 +38,66 @@ def load_image(path):
     return pytesseract.image_to_string(img)
 
 # -------------------------
+# LOAD AUDIO MODEL
+# -------------------------
+audio_model = WhisperModel("base", device="cpu", compute_type="int8")
+
+# -------------------------
+# LOAD AUDIO (SPEECH → TEXT)
+# -------------------------
+def load_audio(path):
+    segments, _ = audio_model.transcribe(path)
+    return " ".join(segment.text for segment in segments)
+
+# -------------------------
+# VIDEO FRAME OCR
+# -------------------------
+def ocr_keyframes(video_path, every_seconds=5, max_frames=12):
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    step = max(1, int(fps * every_seconds))
+
+    texts = []
+    frame_idx = 0
+    grabbed = 0
+
+    while cap.isOpened():
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+        if frame_idx % step == 0:
+            img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            txt = pytesseract.image_to_string(img).strip()
+            if txt:
+                texts.append(txt)
+            grabbed += 1
+            if grabbed >= max_frames:
+                break
+
+        frame_idx += 1
+
+    cap.release()
+    return "\n".join(texts)
+
+# -------------------------
+# LOAD VIDEO (AUDIO + OPTIONAL FRAME OCR)
+# -------------------------
+def load_video(path, do_frame_ocr=True):
+    parts = []
+
+    # 1) Audio transcript (best signal)
+    parts.append(load_audio(path))
+
+    # 2) On-screen text (optional, but great for slides/captions)
+    if do_frame_ocr:
+        frame_text = ocr_keyframes(path, every_seconds=5, max_frames=12)
+        if frame_text.strip():
+            parts.append(frame_text)
+
+    return "\n".join(p for p in parts if p and p.strip())
+
+# -------------------------
 # LOAD ALL DATA FORMATS
 # -------------------------
 def load_all_data(folder="data"):
@@ -49,6 +111,13 @@ def load_all_data(folder="data"):
             all_text += load_pdf(path)
         elif file.endswith(".png") or file.endswith(".jpg"):
             all_text += load_image(path)
+        elif file.endswith((".wav", ".mp3", ".m4a", ".flac", ".ogg")):
+            print(f"Transcribing audio: {file}")
+            all_text += load_audio(path)
+        elif file.endswith((".mp4", ".mov", ".mkv", ".avi", ".webm")):
+            print(f"Processing video: {file}")
+            all_text += f"\n\n--- SOURCE: {file} (video) ---\n\n"
+            all_text += load_video(path, do_frame_ocr=True)
 
     return all_text
 

@@ -1,0 +1,17 @@
+Large language models (LLMs) are powerful neural networks trained on massive datasets of text. They can understand natural language, answer questions, summarize documents, and generate new content. Their abilities come from the patterns they learn during training.
+
+Embeddings are vector representations of text. Instead of storing words as symbols, embeddings convert them into numbers that capture the meaning of the text. If two sentences have similar meaning, their embeddings will be close to each other in vector space.
+
+An embedding model converts complex data (text, images, audio) into dense numerical vectors (lists of numbers) that capture its meaning.
+
+Semantic search is a technique that finds relevant text based on meaning, not keywords. Traditional keyword search only matches exact words. Semantic search, however, uses embeddings to compare the meaning of the query with the meaning of many text chunks.
+
+Similarity search is the technology enabling semantic search.
+
+Vector databases store embeddings efficiently and allow fast similarity search. They can handle millions of vectors and return the top-k most relevant results very quickly. This is important for applications like search engines, chatbots, and recommendation systems.
+
+Chunking is the process of splitting long documents into smaller pieces. Embeddings work better on small chunks because they focus on specific meaning. This also prevents the model from exceeding token limits.
+
+Cosine similarity is a mathematical metric that measures how close two vectors are. When two embeddings point in a similar direction, their cosine similarity is high. This makes it possible to rank text chunks by relevance to the query.
+
+Retrieval-Augmented Generation (RAG) combines semantic search with language models. First, the system retrieves the most relevant chunks using vector search. Then, the language model uses these chunks as context to generate accurate answers.
